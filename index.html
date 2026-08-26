@@ -95,6 +95,19 @@
       font-size: 0.75rem;
       color: #94a3b8;
     }
+    .email-status {
+      display: inline-block;
+      margin: 0.5rem 0 0;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+    }
+    .email-status[data-status="sent"] { background: #334155; color: #cbd5e1; }
+    .email-status[data-status="delivered"] { background: #1e3a8a; color: #93c5fd; }
+    .email-status[data-status="opened"] { background: #14532d; color: #86efac; }
+    .email-status[data-status="clicked"] { background: #4c1d95; color: #c4b5fd; }
+    .email-status[data-status="bounced"] { background: #7f1d1d; color: #fca5a5; }
   </style>
 </head>
 <body>
@@ -117,7 +130,10 @@
     const textEl = document.getElementById("note-text");
     const addButton = document.getElementById("add-note");
 
-    function renderNotes(notes) {
+    let notes = [];
+    const emailStatusByNote = new Map();
+
+    function render() {
       notesList.innerHTML = "";
       for (const note of notes) {
         const li = document.createElement("li");
@@ -130,6 +146,16 @@
         shareBtn.textContent = "Share via email";
         shareBtn.addEventListener("click", () => shareNote(note));
         li.append(p, time, shareBtn);
+
+        const emailStatus = emailStatusByNote.get(note.id);
+        if (emailStatus) {
+          const badge = document.createElement("div");
+          badge.className = "email-status";
+          badge.dataset.status = emailStatus;
+          badge.textContent = emailStatus[0].toUpperCase() + emailStatus.slice(1);
+          li.append(badge);
+        }
+
         notesList.append(li);
       }
     }
@@ -142,7 +168,7 @@
         const response = await fetch("/api/share-note", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to, text: note.text, createdAt: note.created_at }),
+          body: JSON.stringify({ to, text: note.text, createdAt: note.created_at, noteId: note.id }),
         });
 
         if (!response.ok) {
@@ -159,7 +185,7 @@
     async function loadNotes() {
       const { data, error } = await supabase
         .from("notes")
-        .select("text, created_at")
+        .select("id, text, created_at")
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -167,7 +193,38 @@
         statusEl.textContent = "Couldn't load notes.";
         return;
       }
-      renderNotes(data);
+      notes = data;
+      render();
+    }
+
+    async function loadEmailStatuses() {
+      const { data, error } = await supabase
+        .from("email_shares")
+        .select("note_id, status, updated_at")
+        .order("updated_at", { ascending: false });
+
+      if (error) return;
+
+      for (const row of data) {
+        if (!emailStatusByNote.has(row.note_id)) {
+          emailStatusByNote.set(row.note_id, row.status);
+        }
+      }
+      render();
+    }
+
+    function subscribeToEmailStatuses() {
+      supabase
+        .channel("email_shares_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "email_shares" },
+          (payload) => {
+            emailStatusByNote.set(payload.new.note_id, payload.new.status);
+            render();
+          }
+        )
+        .subscribe();
     }
 
     async function addNote() {
@@ -193,6 +250,8 @@
 
     addButton.addEventListener("click", addNote);
     loadNotes();
+    loadEmailStatuses();
+    subscribeToEmailStatuses();
   </script>
 </body>
 </html>

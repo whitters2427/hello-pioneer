@@ -1,3 +1,5 @@
+const { supabaseAdmin } = require("../lib/supabase-admin");
+
 const SITE_URL = "https://hello-pioneer-sepia.vercel.app";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -7,7 +9,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { to, text, createdAt } = req.body || {};
+  const { to, text, createdAt, noteId } = req.body || {};
 
   if (typeof to !== "string" || !EMAIL_RE.test(to)) {
     res.status(400).json({ error: "Invalid email address" });
@@ -15,6 +17,10 @@ module.exports = async function handler(req, res) {
   }
   if (typeof text !== "string" || !text.trim()) {
     res.status(400).json({ error: "Missing note text" });
+    return;
+  }
+  if (typeof noteId !== "string" || !noteId) {
+    res.status(400).json({ error: "Missing note id" });
     return;
   }
 
@@ -51,6 +57,18 @@ module.exports = async function handler(req, res) {
       res.status(502).json({ error: "Resend rejected the email", detail });
       return;
     }
+
+    const sent = await response.json();
+
+    await supabaseAdmin("email_shares", {
+      method: "POST",
+      body: JSON.stringify({
+        note_id: noteId,
+        resend_email_id: sent.id,
+        recipient: to,
+        status: "sent",
+      }),
+    });
 
     res.status(200).json({ ok: true });
   } catch (err) {
