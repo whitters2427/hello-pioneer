@@ -6,22 +6,193 @@
   <title>Hello Pioneer</title>
   <style>
     html, body {
-      height: 100%;
+      min-height: 100%;
       margin: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       background: #0f172a;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #f8fafc;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3rem 1.5rem;
+      gap: 2rem;
     }
     h1 {
-      color: #f8fafc;
       font-size: 2rem;
       text-align: center;
+      margin: 0;
+    }
+    main {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 4rem;
+      resize: vertical;
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      font: inherit;
+    }
+    button {
+      align-self: flex-end;
+      background: #38bdf8;
+      color: #0f172a;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .share-btn {
+      align-self: flex-start;
+      background: transparent;
+      color: #38bdf8;
+      border: 1px solid #38bdf8;
+      padding: 0.3rem 0.7rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    #status {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      min-height: 1.2em;
+    }
+    #notes {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    #notes li {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+    }
+    #notes li p {
+      margin: 0 0 0.4rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #notes li time {
+      font-size: 0.75rem;
+      color: #94a3b8;
     }
   </style>
 </head>
 <body>
   <h1>Greetings from Pioneer Species</h1>
+
+  <main>
+    <textarea id="note-text" placeholder="Write a note..."></textarea>
+    <button id="add-note">Add note</button>
+    <div id="status"></div>
+    <ul id="notes"></ul>
+  </main>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const supabase = createClient("__SUPABASE_URL__", "__SUPABASE_ANON_KEY__");
+
+    const notesList = document.getElementById("notes");
+    const statusEl = document.getElementById("status");
+    const textEl = document.getElementById("note-text");
+    const addButton = document.getElementById("add-note");
+
+    function renderNotes(notes) {
+      notesList.innerHTML = "";
+      for (const note of notes) {
+        const li = document.createElement("li");
+        const p = document.createElement("p");
+        p.textContent = note.text;
+        const time = document.createElement("time");
+        time.textContent = new Date(note.created_at).toLocaleString();
+        const shareBtn = document.createElement("button");
+        shareBtn.className = "share-btn";
+        shareBtn.textContent = "Share via email";
+        shareBtn.addEventListener("click", () => shareNote(note));
+        li.append(p, time, shareBtn);
+        notesList.append(li);
+      }
+    }
+
+    async function shareNote(note) {
+      const to = window.prompt("Send this note to:");
+      if (!to) return;
+
+      try {
+        const response = await fetch("/api/share-note", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to, text: note.text, createdAt: note.created_at }),
+        });
+
+        if (!response.ok) {
+          window.alert("Couldn't send that email.");
+          return;
+        }
+
+        window.alert("Sent!");
+      } catch (err) {
+        window.alert("Couldn't send that email.");
+      }
+    }
+
+    async function loadNotes() {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("text, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) {
+        statusEl.textContent = "Couldn't load notes.";
+        return;
+      }
+      renderNotes(data);
+    }
+
+    async function addNote() {
+      const text = textEl.value.trim();
+      if (!text) return;
+
+      addButton.disabled = true;
+      statusEl.textContent = "Saving...";
+
+      const { error } = await supabase.from("notes").insert({ text });
+
+      addButton.disabled = false;
+
+      if (error) {
+        statusEl.textContent = "Couldn't save note.";
+        return;
+      }
+
+      textEl.value = "";
+      statusEl.textContent = "";
+      loadNotes();
+    }
+
+    addButton.addEventListener("click", addNote);
+    loadNotes();
+  </script>
 </body>
 </html>

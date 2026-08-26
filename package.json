@@ -1,0 +1,7 @@
+{
+  "name": "hello-pioneer",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  }
+}
